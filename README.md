@@ -38,6 +38,14 @@ colcon build --symlink-install --packages-select suas_seed_case_tracking \
 
 Note: `pylon_ros2_camera_interface` is only required for the ROS service `.srv` definition
 
+## Configuration
+
+Camera parameter config is located under `config/basler_ace_config.yaml` (default).
+
+There are two modes that can be enabled via config:
+1. `data_collection`: saves images into the given `output_folder`
+2. `online_tracking`: processes each frame and track the seed case (not yet implemented)
+
 ## Run
 
 * Launch the node
@@ -67,23 +75,16 @@ Note: `pylon_ros2_camera_interface` is only required for the ROS service `.srv` 
 ## Topics and Services
 
 ### Subscribed Topics
-* `/basler_camera/basler_wrapper/event_in` (`std_msgs/msg/String`): Software event trigger interface (e.g., send `"{data: 'e_start'}"` to trigger). If even trigger is enabled, the camera thread will not run until it receives `e_start`
-* `/mavros/global_position/global` (`sensor_msgs/msg/NavSatFix`)
+* `/seed_case_tracking/event_in` (`std_msgs/msg/String`): Software event trigger interface (e.g., send `"{data: 'e_start'}"` to trigger). If even trigger is enabled, the camera thread will not run until it receives `e_start`
+* `/mavros/global_position/global` (`sensor_msgs/msg/NavSatFix`): GPS topic
 * `/mavros/imu/data` (`sensor_msgs/msg/Imu`)
-* `/mavros/sprouter/trigger-signal` (Custom): Hardware trigger signals from the drone sprouter mechanism.
-* `/mavros/sprouter/trigger-timestamp` (Custom): Precise timestamps corresponding to sprouter triggers.
+* `/mavros/sprouter/trigger-signal` (Custom): Hardware trigger signals from the drone sprouter mechanism
+* `/mavros/sprouter/trigger-timestamp` (Custom): Timestamps corresponding to sprouter triggers
 * `/cougar_camera/camera_driver_node/image_raw` (`sensor_msgs/msg/Image`): Wide angle camera
 
 ### Published Topics
-* `/image_raw` (`sensor_msgs/msg/Image`): Main high-speed image stream produced by the Basler camera.
-
-
-## Issues and Notes
-* FPS are much lower in ROS (issue)[https://github.com/basler/pylon-ros-camera/issues/200], ros spi will impact the rate. It gives 90-100fps for rgb8 and 175 for mono8
-* Basler wrapper: ~290-300fps (rgb8), faster if no visualization on rviz and 328 (mono8)
-* If `trigger_mode` is set to `on` for software trigger, frame drops to 133fps
-* When `TriggerSource` is set to `Line1` cam.TriggerSource.GetValue() witll return `30 (camera register space)`. Use `camera_.TriggerSource.ToString().c_str()` instead
-* 
+* `/seed_case_tracking/image_raw` (`sensor_msgs/msg/Image`): Raw image retrieved from the camera for each frame
+* `/seed_case_tracking/event_out` (`std_msgs/msg/String`): Even out topic when `e_start or e_stop` has been received by the node
 
 ## ToDo
 * [x] Trigger: e_start -> setup camera params -> execute capture
