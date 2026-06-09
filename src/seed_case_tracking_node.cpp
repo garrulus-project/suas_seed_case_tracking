@@ -35,6 +35,7 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     // publishers
     imagePub_ = this->create_publisher<sensor_msgs::msg::Image>("image_raw", 100);
     baslerTriggerCounterPub_ = this->create_publisher<std_msgs::msg::Int32>("basler_trigger_counter", 10);
+    eventOutPub_ = this->create_publisher<std_msgs::msg::String>("event_out", 10);
 
     // subscribers
     eventInSub_ = this->create_subscription<std_msgs::msg::String>(
@@ -61,7 +62,20 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
         cougar_image_topic, 10,
         std::bind(&SeedCaseTrackingNode::cougarImageCallback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized. Waiting for events...");
+    RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized....");
+
+    this->declare_parameter<bool>("event_trigger", false);
+    eventTrigger_ = this->get_parameter("event_trigger").as_bool();
+    RCLCPP_INFO_STREAM(this->get_logger(), "Event trigger: " << (eventTrigger_ ? "enabled" : "disabled"));
+    if (!eventTrigger_) {
+        // Start processing immediately if event trigger is disabled
+        camera_->startGrab();
+        processing_ = true;
+        processingThread_ = std::thread(&SeedCaseTrackingNode::startTracking, this);
+        RCLCPP_INFO(this->get_logger(), "Event trigger disabled, started tracking immediately...");
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Waiting for 'e_start' event to start tracking...");
+    }
 }
 
 SeedCaseTrackingNode::~SeedCaseTrackingNode()
@@ -72,18 +86,26 @@ SeedCaseTrackingNode::~SeedCaseTrackingNode()
 void SeedCaseTrackingNode::eventInCallback(const std_msgs::msg::String::SharedPtr msg)
 {
     RCLCPP_INFO_STREAM(this->get_logger(), "Received event: " << msg->data);
-
-    if (msg->data == "e_start" && !processing_.load())
+    if (!eventTrigger_) {
+        RCLCPP_WARN(this->get_logger(), "Received 'e_start' event but event trigger is disabled. Ignoring.");
+        return;
+    }
+    std_msgs::msg::String event_out_msg;
+    if (msg->data == "e_start" && !processing_.load() && eventTrigger_)
     {
         camera_->startGrab();
         processing_ = true;
-        processingThread_ = std::thread(&SeedCaseTrackingNode::processingLoop, this);
+        processingThread_ = std::thread(&SeedCaseTrackingNode::startTracking, this);
         RCLCPP_INFO(this->get_logger(), "Processing started.");
+        event_out_msg.data = "e_started";
+        eventOutPub_->publish(event_out_msg);
     }
     else if (msg->data == "e_stop")
     {
         stopProcessing();
         RCLCPP_INFO(this->get_logger(), "Processing stopped.");
+        event_out_msg.data = "e_stopped";
+        eventOutPub_->publish(event_out_msg);
     }
 }
 
@@ -99,35 +121,32 @@ void SeedCaseTrackingNode::stopProcessing()
 const sensor_msgs::msg::Image& SeedCaseTrackingNode::getBgrFrame(
     const sensor_msgs::msg::Image& frame, 
     bool& bgr_converted)
-    {
-        if (!bgr_converted) {
-            try {
-                // Ensure the preallocated member has the correct size
-                if (bgr8Frame_.data.size() != frame.width * frame.height * 3) {
-                    bgr8Frame_.height = frame.height;
-                    bgr8Frame_.width = frame.width;
-                    bgr8Frame_.encoding = sensor_msgs::image_encodings::BGR8;
-                    bgr8Frame_.is_bigendian = frame.is_bigendian;
-                    bgr8Frame_.step = frame.width * 3;
-                    bgr8Frame_.data.resize(bgr8Frame_.step * bgr8Frame_.height);
-                }
-                bgr8Frame_.header = frame.header;
-
-                // Use cv_bridge to do the demosaicing (allocates a temporary cv::Mat)
-                auto cv_img = cv_bridge::toCvCopy(frame, sensor_msgs::image_encodings::BGR8);
-                
-                // Copy directly into our preallocated ROS message buffer, avoiding toImageMsg() allocation!
-                std::memcpy(bgr8Frame_.data.data(), cv_img->image.data, bgr8Frame_.data.size());
-            } catch (const cv_bridge::Exception& e) {
-                RCLCPP_WARN_STREAM(this->get_logger(), "cv_bridge conversion failed: " << e.what());
-                return frame; // fallback to raw
+{
+    if (!bgr_converted) {
+        try {
+            // Ensure the preallocated member has the correct size
+            if (bgr8Frame_.data.size() != frame.width * frame.height * 3) {
+                bgr8Frame_.height = frame.height;
+                bgr8Frame_.width = frame.width;
+                bgr8Frame_.encoding = sensor_msgs::image_encodings::BGR8;
+                bgr8Frame_.is_bigendian = frame.is_bigendian;
+                bgr8Frame_.step = frame.width * 3;
+                bgr8Frame_.data.resize(bgr8Frame_.step * bgr8Frame_.height);
             }
-            bgr_converted = true;
+            bgr8Frame_.header = frame.header;
+            auto cv_img = cv_bridge::toCvCopy(frame, sensor_msgs::image_encodings::BGR8);
+            // Copy directly into our preallocated ROS message buffer, avoiding toImageMsg() allocation!
+            std::memcpy(bgr8Frame_.data.data(), cv_img->image.data, bgr8Frame_.data.size());
+        } catch (const cv_bridge::Exception& e) {
+            RCLCPP_WARN_STREAM(this->get_logger(), "cv_bridge conversion failed: " << e.what());
+            return frame; // fallback to raw
         }
-        return bgr8Frame_;
+        bgr_converted = true;
     }
+    return bgr8Frame_;
+}
 
-void SeedCaseTrackingNode::processingLoop()
+void SeedCaseTrackingNode::startTracking()
 {
     sensor_msgs::msg::Image frame;
     int fpsCount = 0;
@@ -147,10 +166,8 @@ void SeedCaseTrackingNode::processingLoop()
         if (mode_ == Mode::DataCollection) {
             std::string filename = buildFilename(frame.header.stamp);
             if (imagePub_->get_subscription_count() > 0) {
-                // If we have subscribers, we will demosaic anyway, so let's pass the BGR image to saveImage.
                 camera_->saveImage(getBgrFrame(frame, bgr_converted), filename);
             } else {
-                // No subscribers, pass raw frame to saveImage so it can demosaic directly via cv_bridge.
                 camera_->saveImage(frame, filename);
             }
         } else if (mode_ == Mode::OnlineTracking) {
