@@ -1,0 +1,41 @@
+seed_case_tracking_node:
+  ros__parameters:
+    mode: "data_collection"  # "data_collection" or "online_tracking"
+    camera_type: "basler_ace"    # "basler_ace"
+
+    gps_topic: "/mavros/global_position/global"
+    imu_topic: "/mavros/imu/data"
+    cougar_image_topic: "/cougar_camera/camera_driver_node/image_raw"
+
+    # basler ace camera parameters
+    serial_number: "40316399"
+    image_width: 500
+    image_height: 500
+    pixel_format: "rgb8"
+    calibration_file: ""
+    
+    output_folder: "/home/uas/ros2_ws/src/ros-seeding-stack/suas_seed_case_tracking/saved_images"
+    #trigger_source: 0 # 0=Software, 1=Line1, 2=Line3, 3=Line4, 4=SoftwareSignal1, 5=SoftwareSignal2, 6=SoftwareSignal3
+    #trigger_mode: false # true=On, false=Off
+    #trigger_selector: 0 # 0=FrameStart, 1=FrameBurstStart
+    #grabbing_strategy: 0 # 0=LatestImageOnly, 1=LatestImages
+    
+    user_set_selector: 1  # 0=Default, 1=UserSet1, 2=UserSet2, 
+    acquisition_mode: 1  # 0=SingleFrame, 1=Continuous
+    acquisition_burst_frame_count: 200 # num of frames to capture in a burst when acquisition mode is continuous (max=255)
+    acquisition_frame_rate_enabled: false # if enabled, resulting frame is acquisition frame rate
+    acquisition_frame_rate: 200 # limit acquisition frame rate when acquisition frame rate is enabled
+    ### other configs
+    # batch_size: 200 # this should be the same as acquisition_frame_rate
+    # gain: 0.0
+    # exposure_time: 0.0
+    # capture_duration_ms: 60000
+    # single_capture_duration_ms: 10000
+    # black_level: 0
+    # gamma: 1.0
+    # shutter_mode: 0       # 0=rolling, 1=global, 2=global-reset-release
+    # pgi_mode: false
+    # demosaicing_mode: 0   # 0=simple, 1=basler_pgi
+    # noise_reduction: 0.0
+    save_image_prefix: "basler"
+    debug: true
