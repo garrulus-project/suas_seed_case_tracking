@@ -1,6 +1,7 @@
-seed_case_tracking_node:
+/**:
   ros__parameters:
     mode: "data_collection"  # "data_collection" or "online_tracking"
+    event_trigger: false # if true, start/stop tracking based on event_in topic; if false, start tracking immediately when frame is received
     camera_type: "basler_ace"    # "basler_ace"
 
     gps_topic: "/mavros/global_position/global"
@@ -12,7 +13,7 @@ seed_case_tracking_node:
     image_width: 500
     image_height: 500
     pixel_format: "rgb8"
-    calibration_file: ""
+    calibration_file: "package://seeding_system_launch/config/basler_camera_calibration.yaml"
     
     output_folder: "/home/uas/ros2_ws/src/ros-seeding-stack/suas_seed_case_tracking/saved_images"
     #trigger_source: 0 # 0=Software, 1=Line1, 2=Line3, 3=Line4, 4=SoftwareSignal1, 5=SoftwareSignal2, 6=SoftwareSignal3
