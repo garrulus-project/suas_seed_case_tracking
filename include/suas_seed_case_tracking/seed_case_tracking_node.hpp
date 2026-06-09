@@ -37,7 +37,7 @@ private:
         const sensor_msgs::msg::Image& frame, 
         bool& bgr_converted);
 
-    void processingLoop();
+    void startTracking();
     std::string buildFilename(const builtin_interfaces::msg::Time& stamp);
 
     void gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
@@ -55,6 +55,8 @@ private:
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr imagePub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr baslerTriggerCounterPub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr eventOutPub_;
+
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr eventInSub_;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gpsSub_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imuSub_;
@@ -70,6 +72,7 @@ private:
     std::string saveImagePrefix_;
     int frameCounter_ = 0;
     int baslerTriggerCounter_ = 0;
+    bool eventTrigger_ = false;
 };
 
 #endif // SUAS_SEED_CASE_TRACKING__SEED_CASE_TRACKING_NODE_HPP_
