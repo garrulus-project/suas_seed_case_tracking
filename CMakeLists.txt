@@ -25,6 +25,7 @@ find_package(image_geometry REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS imgcodecs)
 find_package(Pylon REQUIRED)
+find_package(mavros_msgs REQUIRED)
 
 set(DEPENDENCIES
     rclcpp
@@ -35,6 +36,7 @@ set(DEPENDENCIES
     image_transport
     image_geometry
     cv_bridge
+    mavros_msgs
 )
 
 include_directories(include)
@@ -80,6 +82,7 @@ ament_target_dependencies(seed_case_tracking_node
     sensor_msgs
     std_msgs
     cv_bridge
+    mavros_msgs
 )
 
 # --- Install ---

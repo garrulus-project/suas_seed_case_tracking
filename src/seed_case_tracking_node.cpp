@@ -29,8 +29,10 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
 
     this->declare_parameter<std::string>("output_folder", "");
     this->declare_parameter<std::string>("save_image_prefix", "frame");
+    this->declare_parameter<std::string>("cougar_image_prefix", "cougar");
     outputFolder_ = this->get_parameter("output_folder").as_string();
     saveImagePrefix_ = this->get_parameter("save_image_prefix").as_string();
+    cougarImagePrefix_ = this->get_parameter("cougar_image_prefix").as_string();
 
     // publishers
     imagePub_ = this->create_publisher<sensor_msgs::msg::Image>("image_raw", 100);
@@ -61,6 +63,23 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     cougarImageSub_ = this->create_subscription<sensor_msgs::msg::Image>(
         cougar_image_topic, 10,
         std::bind(&SeedCaseTrackingNode::cougarImageCallback, this, std::placeholders::_1));
+
+    std::string sprouter_status_topic, sprouter_released_topic, sprouter_debug_value_topic;
+    this->declare_parameter<std::string>("sprouter_status_topic", "/mavros/sprouter/status");
+    this->declare_parameter<std::string>("sprouter_released_topic", "/mavros/sprouter/seed_released");
+    this->declare_parameter<std::string>("sprouter_debug_value_topic", "/mavros/debug_value/named_value_int");
+    sprouter_status_topic = this->get_parameter("sprouter_status_topic").as_string();
+    sprouter_released_topic = this->get_parameter("sprouter_released_topic").as_string();
+    sprouter_debug_value_topic = this->get_parameter("sprouter_debug_value_topic").as_string();
+    sprouterStatusSub_ = this->create_subscription<mavros_msgs::msg::SprouterStatus>(
+        sprouter_status_topic, 10,
+        std::bind(&SeedCaseTrackingNode::sprouterStatusCallback, this, std::placeholders::_1));
+    sprouterReleasedSub_ = this->create_subscription<mavros_msgs::msg::SprouterSeedReleased>(
+        sprouter_released_topic, 10,
+        std::bind(&SeedCaseTrackingNode::sprouterReleasedCallback, this, std::placeholders::_1));
+    sprouterDebugValueSub_ = this->create_subscription<mavros_msgs::msg::DebugValue>(
+        sprouter_debug_value_topic, 10,
+        std::bind(&SeedCaseTrackingNode::sprouterDebugValueCallback, this, std::placeholders::_1));
 
     RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized....");
 
@@ -164,11 +183,15 @@ void SeedCaseTrackingNode::startTracking()
         baslerTriggerCounter_++;
 
         if (mode_ == Mode::DataCollection) {
-            std::string filename = buildFilename(frame.header.stamp);
-            if (imagePub_->get_subscription_count() > 0) {
-                camera_->saveImage(getBgrFrame(frame, bgr_converted), filename);
-            } else {
-                camera_->saveImage(frame, filename);
+            std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+            if (sprouterTriggerRecived_) {
+                std::string filename = buildFilename(sprouterTriggerTimestamp_);
+                if (imagePub_->get_subscription_count() > 0) {
+                    camera_->saveImage(getBgrFrame(frame, bgr_converted), filename);
+                } else {
+                    camera_->saveImage(frame, filename);
+                }
+                sprouterTriggerRecived_ = false;
             }
         } else if (mode_ == Mode::OnlineTracking) {
             // ToDo: run tracking here
@@ -211,6 +234,21 @@ std::string SeedCaseTrackingNode::buildFilename(const builtin_interfaces::msg::T
        << std::put_time(&tm_time, "%Y%m%d_%H%M%S")
        << "_" << std::setfill('0') << std::setw(9) << stamp.nanosec
        << ".png";
+   return ss.str();
+}
+
+std::string SeedCaseTrackingNode::buildCougarFilename(const builtin_interfaces::msg::Time& stamp)
+{
+    std::ostringstream ss;
+
+    time_t sec = stamp.sec;
+    struct tm tm_time;
+    localtime_r(&sec, &tm_time);
+
+    ss << outputFolder_ << "/" << cougarImagePrefix_ << "_"
+       << std::put_time(&tm_time, "%Y%m%d_%H%M%S")
+       << "_" << std::setfill('0') << std::setw(9) << stamp.nanosec
+       << ".png";
     return ss.str();
 }
 
@@ -234,6 +272,39 @@ void SeedCaseTrackingNode::cougarImageCallback(const sensor_msgs::msg::Image::Sh
     latestCougarImage_ = msg;
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
         "Cougar image: %dx%d %s", msg->width, msg->height, msg->encoding.c_str());
+
+    std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+    if (sprouterTriggerRecived_) {
+        std::string cougarFilename = buildCougarFilename(sprouterTriggerTimestamp_);
+        camera_->saveImage(*msg, cougarFilename);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Cougar image saved: " << cougarFilename);
+    }
+}
+
+void SeedCaseTrackingNode::sprouterStatusCallback(const mavros_msgs::msg::SprouterStatus::SharedPtr msg)
+{
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        "Sprouter status: current state=%d", msg->current_state);
+}
+
+void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::SprouterSeedReleased::SharedPtr msg)
+{
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        "Sprouter released: seed_count=%d", msg->seed_count);
+    RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
+    std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+    sprouterTriggerRecived_ = false;
+}
+
+void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::DebugValue::SharedPtr msg)
+{
+    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        "Sprouter debug value: name=%s value=%d", msg->name.c_str(), msg->value_int);
+    if (msg->name == "SprTrigSg" && msg->value_int == 1) {
+        std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+        sprouterTriggerRecived_ = true;
+        sprouterTriggerTimestamp_ = msg->header.stamp;
+    }
 }
 
 int main(int argc, char* argv[])

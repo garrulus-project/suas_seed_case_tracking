@@ -8,6 +8,7 @@
 #include <ctime>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <string>
@@ -19,6 +20,10 @@
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <cv_bridge/cv_bridge.hpp>
+#include <mavros_msgs/msg/debug_value.hpp>
+#include <mavros_msgs/msg/sprouter_seed_released.hpp>
+#include <mavros_msgs/msg/sprouter_status.hpp>
+
 
 class SeedCaseTrackingNode : public rclcpp::Node
 {
@@ -39,10 +44,14 @@ private:
 
     void startTracking();
     std::string buildFilename(const builtin_interfaces::msg::Time& stamp);
+    std::string buildCougarFilename(const builtin_interfaces::msg::Time& stamp);
 
     void gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
     void cougarImageCallback(const sensor_msgs::msg::Image::SharedPtr msg);
+    void sprouterStatusCallback(const mavros_msgs::msg::SprouterStatus::SharedPtr msg);
+    void sprouterReleasedCallback(const mavros_msgs::msg::SprouterSeedReleased::SharedPtr msg);
+    void sprouterDebugValueCallback(const mavros_msgs::msg::DebugValue::SharedPtr msg);
 
     // mode: data collection or online tracking
     Mode mode_;
@@ -61,6 +70,9 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gpsSub_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imuSub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr cougarImageSub_;
+    rclcpp::Subscription<mavros_msgs::msg::SprouterStatus>::SharedPtr sprouterStatusSub_;
+    rclcpp::Subscription<mavros_msgs::msg::SprouterSeedReleased>::SharedPtr sprouterReleasedSub_;
+    rclcpp::Subscription<mavros_msgs::msg::DebugValue>::SharedPtr sprouterDebugValueSub_;
 
     // Latest sensor data (cached)
     sensor_msgs::msg::NavSatFix::SharedPtr latestGps_;
@@ -70,9 +82,13 @@ private:
 
     std::string outputFolder_;
     std::string saveImagePrefix_;
+    std::string cougarImagePrefix_;
     int frameCounter_ = 0;
     int baslerTriggerCounter_ = 0;
     bool eventTrigger_ = false;
+    bool sprouterTriggerRecived_ = false;
+    builtin_interfaces::msg::Time sprouterTriggerTimestamp_;
+    std::mutex sprouterTriggerMutex_;
 };
 
 #endif // SUAS_SEED_CASE_TRACKING__SEED_CASE_TRACKING_NODE_HPP_

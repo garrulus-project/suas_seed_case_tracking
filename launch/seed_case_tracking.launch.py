@@ -28,7 +28,12 @@ def generate_launch_description():
                               description='IMU topic'),
         DeclareLaunchArgument('cougar_image_topic', default_value='/cougar_camera/camera_driver_node/image_raw',
                               description='Cougar image topic'),
-
+        DeclareLaunchArgument('sprouter_status_topic', default_value='/mavros/sprouter/status', # When the sprouter propells the seed
+                              description='Sprouter status topic'),
+        DeclareLaunchArgument('sprouter_released_topic', default_value='/mavros/sprouter/seed_released', # Current status of the sprouter
+                              description='Sprouter seed released topic'),
+        DeclareLaunchArgument('sprouter_debug_value_topic', default_value='/mavros/debug_value/named_value_int',
+                              description='Sprouter debug value topic'),
         Node(
             package='suas_seed_case_tracking',
             executable='seed_case_tracking_node',
@@ -44,6 +49,9 @@ def generate_launch_description():
                     'gps_topic': LaunchConfiguration('gps_topic'),
                     'imu_topic': LaunchConfiguration('imu_topic'),
                     'cougar_image_topic': LaunchConfiguration('cougar_image_topic'),
+                    'sprouter_status_topic': LaunchConfiguration('sprouter_status_topic'),
+                    'sprouter_released_topic': LaunchConfiguration('sprouter_released_topic'),
+                    'sprouter_debug_value_topic': LaunchConfiguration('sprouter_debug_value_topic'),
                 },
             ],
         ),
