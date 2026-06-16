@@ -184,13 +184,9 @@ void SeedCaseTrackingNode::startTracking()
 
         if (mode_ == Mode::DataCollection) {
             std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-            if (sprouterTriggerRecived_) {
+            if (sprouterTriggerReceived_) {
                 std::string filename = buildFilename(sprouterTriggerTimestamp_);
-                if (imagePub_->get_subscription_count() > 0) {
-                    camera_->saveImage(getBgrFrame(frame, bgr_converted), filename);
-                } else {
-                    camera_->saveImage(frame, filename);
-                }
+                camera_->saveImage(frame, filename);
             }
         } else if (mode_ == Mode::OnlineTracking) {
             // ToDo: run tracking here
@@ -273,7 +269,7 @@ void SeedCaseTrackingNode::cougarImageCallback(const sensor_msgs::msg::Image::Sh
         "Cougar image: %dx%d %s", msg->width, msg->height, msg->encoding.c_str());
 
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-    if (sprouterTriggerRecived_ && !cougarSaved_) {
+    if (sprouterTriggerReceived_ && !cougarSaved_) {
         std::string cougarFilename = buildCougarFilename(sprouterTriggerTimestamp_);
         camera_->saveImage(*msg, cougarFilename);
         cougarSaved_ = true;
@@ -293,7 +289,7 @@ void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::Spro
         "Sprouter released: seed_count=%d", msg->seed_count);
     RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-    sprouterTriggerRecived_ = false;
+    sprouterTriggerReceived_ = false;
     cougarSaved_ = false;
 }
 
@@ -303,7 +299,7 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
         "Sprouter debug value: name=%s value=%d", msg->name.c_str(), msg->value_int);
     if (msg->name == "SprTrigSg" && msg->value_int == 1) {
         std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-        sprouterTriggerRecived_ = true;
+        sprouterTriggerReceived_ = true;
         sprouterTriggerTimestamp_ = msg->header.stamp;
         RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter trigger received, timestamp: "
             << sprouterTriggerTimestamp_.sec << "." << sprouterTriggerTimestamp_.nanosec);
