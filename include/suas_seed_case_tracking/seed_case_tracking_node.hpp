@@ -87,6 +87,7 @@ private:
     int baslerTriggerCounter_ = 0;
     bool eventTrigger_ = false;
     bool sprouterTriggerRecived_ = false;
+    bool cougarSaved_ = false;
     builtin_interfaces::msg::Time sprouterTriggerTimestamp_;
     std::mutex sprouterTriggerMutex_;
 };

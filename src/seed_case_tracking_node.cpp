@@ -191,7 +191,6 @@ void SeedCaseTrackingNode::startTracking()
                 } else {
                     camera_->saveImage(frame, filename);
                 }
-                sprouterTriggerRecived_ = false;
             }
         } else if (mode_ == Mode::OnlineTracking) {
             // ToDo: run tracking here
@@ -274,9 +273,10 @@ void SeedCaseTrackingNode::cougarImageCallback(const sensor_msgs::msg::Image::Sh
         "Cougar image: %dx%d %s", msg->width, msg->height, msg->encoding.c_str());
 
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-    if (sprouterTriggerRecived_) {
+    if (sprouterTriggerRecived_ && !cougarSaved_) {
         std::string cougarFilename = buildCougarFilename(sprouterTriggerTimestamp_);
         camera_->saveImage(*msg, cougarFilename);
+        cougarSaved_ = true;
         RCLCPP_INFO_STREAM(this->get_logger(), "Cougar image saved: " << cougarFilename);
     }
 }
@@ -294,6 +294,7 @@ void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::Spro
     RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
     sprouterTriggerRecived_ = false;
+    cougarSaved_ = false;
 }
 
 void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::DebugValue::SharedPtr msg)
@@ -304,6 +305,8 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
         std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
         sprouterTriggerRecived_ = true;
         sprouterTriggerTimestamp_ = msg->header.stamp;
+        RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter trigger received, timestamp: "
+            << sprouterTriggerTimestamp_.sec << "." << sprouterTriggerTimestamp_.nanosec);
     }
 }
 
