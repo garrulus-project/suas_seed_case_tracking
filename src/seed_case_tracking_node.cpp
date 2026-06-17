@@ -57,16 +57,19 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     cougar_image_topic = this->get_parameter("cougar_image_topic").as_string();
 
     gpsSub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
-        gps_topic, 10,
+        gps_topic, rclcpp::SensorDataQoS(),
         std::bind(&SeedCaseTrackingNode::gpsCallback, this, std::placeholders::_1));
 
     imuSub_ = this->create_subscription<sensor_msgs::msg::Imu>(
-        imu_topic, 10,
+        imu_topic, rclcpp::SensorDataQoS(),
         std::bind(&SeedCaseTrackingNode::imuCallback, this, std::placeholders::_1));
 
     cougarImageSub_ = this->create_subscription<sensor_msgs::msg::Image>(
         cougar_image_topic, 10,
         std::bind(&SeedCaseTrackingNode::cougarImageCallback, this, std::placeholders::_1));
+
+    RCLCPP_INFO_STREAM(this->get_logger(), "IMU topic: " << imu_topic.c_str());
+    RCLCPP_INFO_STREAM(this->get_logger(), "GPS topic: " << gps_topic.c_str());
 
     std::string sprouter_status_topic, sprouter_released_topic, sprouter_debug_value_topic;
     this->declare_parameter<std::string>("sprouter_status_topic", "/mavros/sprouter/status");
