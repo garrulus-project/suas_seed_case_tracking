@@ -15,6 +15,8 @@
 #include <queue>
 #include <condition_variable>
 #include <chrono>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -54,6 +56,8 @@ private:
     void startTracking();
     std::string buildFilename(const builtin_interfaces::msg::Time& stamp);
     std::string buildCougarFilename(const builtin_interfaces::msg::Time& stamp);
+    std::string buildMetadataFilename(const builtin_interfaces::msg::Time& stamp);
+    void saveMetadata(const mavros_msgs::msg::SprouterSeedReleased::SharedPtr& released_msg);
 
     void gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
@@ -101,11 +105,17 @@ private:
     sensor_msgs::msg::NavSatFix::SharedPtr latestGps_;
     sensor_msgs::msg::Imu::SharedPtr latestImu_;
     sensor_msgs::msg::Image::SharedPtr latestCougarImage_;
+
+    // Sensor data snapshotted at trigger time
+    sensor_msgs::msg::NavSatFix::SharedPtr triggerGps_;
+    sensor_msgs::msg::Imu::SharedPtr triggerImu_;
+
     sensor_msgs::msg::Image bgr8Frame_; // debug image for visualization
 
     std::string outputFolder_;
     std::string saveImagePrefix_;
     std::string cougarImagePrefix_;
+    std::string metadataPrefix_;
     int frameCounter_ = 0;
     int baslerTriggerCounter_ = 0;
     bool eventTrigger_ = false;
