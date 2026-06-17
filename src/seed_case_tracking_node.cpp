@@ -30,10 +30,12 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     this->declare_parameter<std::string>("output_folder", "");
     this->declare_parameter<std::string>("save_image_prefix", "frame");
     this->declare_parameter<std::string>("cougar_image_prefix", "cougar");
+    this->declare_parameter<std::string>("metadata_prefix", "metadata");
     this->declare_parameter<double>("save_window_duration", 1.0);
     outputFolder_ = this->get_parameter("output_folder").as_string();
     saveImagePrefix_ = this->get_parameter("save_image_prefix").as_string();
     cougarImagePrefix_ = this->get_parameter("cougar_image_prefix").as_string();
+    metadataPrefix_ = this->get_parameter("metadata_prefix").as_string();
     saveWindowDuration_ = this->get_parameter("save_window_duration").as_double();
 
     // publishers
@@ -292,6 +294,85 @@ std::string SeedCaseTrackingNode::buildCougarFilename(const builtin_interfaces::
     return ss.str();
 }
 
+std::string SeedCaseTrackingNode::buildMetadataFilename(const builtin_interfaces::msg::Time& stamp)
+{
+    std::ostringstream ss;
+
+    time_t sec = stamp.sec;
+    struct tm tm_time;
+    localtime_r(&sec, &tm_time);
+
+    ss << outputFolder_ << "/" << metadataPrefix_ << "_"
+       << std::put_time(&tm_time, "%Y%m%d_%H%M%S")
+       << "_" << std::setfill('0') << std::setw(9) << stamp.nanosec
+       << ".json";
+    return ss.str();
+}
+
+void SeedCaseTrackingNode::saveMetadata(const mavros_msgs::msg::SprouterSeedReleased::SharedPtr& released_msg)
+{
+    nlohmann::json j;
+
+    j["sprouter_released"] = {
+        {"header_stamp", {{"sec", released_msg->header.stamp.sec}, {"nanosec", released_msg->header.stamp.nanosec}}},
+        {"timestamp", released_msg->timestamp},
+        {"seed_count", released_msg->seed_count},
+        {"distance", released_msg->distance}
+    };
+
+    if (triggerGps_) {
+        std::vector<double> cov;
+        for (int i = 0; i < 9; ++i) {
+            cov.push_back(triggerGps_->position_covariance[i]);
+        }
+        j["gps"] = {
+            {"header_stamp", {{"sec", triggerGps_->header.stamp.sec}, {"nanosec", triggerGps_->header.stamp.nanosec}}},
+            {"latitude", triggerGps_->latitude},
+            {"longitude", triggerGps_->longitude},
+            {"altitude", triggerGps_->altitude},
+            {"status", {{"status", triggerGps_->status.status}, {"service", triggerGps_->status.service}}},
+            {"position_covariance", cov},
+            {"position_covariance_type", triggerGps_->position_covariance_type}
+        };
+    } else {
+        j["gps"] = nullptr;
+    }
+
+    if (triggerImu_) {
+        j["imu"] = {
+            {"header_stamp", {{"sec", triggerImu_->header.stamp.sec}, {"nanosec", triggerImu_->header.stamp.nanosec}}},
+            {"orientation", {
+                {"x", triggerImu_->orientation.x},
+                {"y", triggerImu_->orientation.y},
+                {"z", triggerImu_->orientation.z},
+                {"w", triggerImu_->orientation.w}
+            }},
+            {"angular_velocity", {
+                {"x", triggerImu_->angular_velocity.x},
+                {"y", triggerImu_->angular_velocity.y},
+                {"z", triggerImu_->angular_velocity.z}
+            }},
+            {"linear_acceleration", {
+                {"x", triggerImu_->linear_acceleration.x},
+                {"y", triggerImu_->linear_acceleration.y},
+                {"z", triggerImu_->linear_acceleration.z}
+            }}
+        };
+    } else {
+        j["imu"] = nullptr;
+    }
+
+    std::string filename = buildMetadataFilename(sprouterTriggerTimestamp_);
+    std::ofstream file(filename);
+    if (file.is_open()) {
+        file << j.dump(4);
+        file.close();
+        RCLCPP_INFO_STREAM(this->get_logger(), "Saved metadata to " << filename);
+    } else {
+        RCLCPP_ERROR_STREAM(this->get_logger(), "Failed to open metadata file: " << filename);
+    }
+}
+
 void SeedCaseTrackingNode::gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg)
 {
     latestGps_ = msg;
@@ -334,8 +415,9 @@ void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::Spro
         "Sprouter released: seed_count=%d", msg->seed_count);
     RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-    //sprouterTriggerReceived_ = false;
-    // cougarSaved_ = false;
+    if (sprouterTriggerReceived_) {
+        saveMetadata(msg);
+    }
 }
 
 void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::DebugValue::SharedPtr msg)
@@ -350,6 +432,8 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
             triggerReceivedTime_ = std::chrono::steady_clock::now();
             cougarSaved_ = false;
             frameCounter_ = 0; // reset frame counter for filename
+            triggerGps_ = latestGps_;   // snapshot GPS at trigger time
+            triggerImu_ = latestImu_;   // snapshot IMU at trigger time
         }
         if (flushQueueOnTrigger_) {
             flushSaveQueue(msg->header.stamp);
