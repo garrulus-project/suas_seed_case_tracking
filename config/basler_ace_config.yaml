@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     mode: "data_collection"  # "data_collection" or "online_tracking"
-    save_window_duration: 1.0 # time window in seconds to buffer frames after a trigger
+    save_window_duration: 2.0 # time window in seconds to buffer frames after a trigger
     event_trigger: false # if true, start/stop tracking based on event_in topic; if false, start tracking immediately when frame is received
     camera_type: "basler_ace"    # "basler_ace"
 
