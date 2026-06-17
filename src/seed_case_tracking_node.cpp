@@ -83,7 +83,8 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
 
     RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized....");
 
-    this->declare_parameter<bool>("debug", false);
+    
+    // this->declare_parameter<bool>("debug", false);
     debugMode_ = this->get_parameter("debug").as_bool();
     RCLCPP_INFO_STREAM(this->get_logger(), "Debug mode: " << (debugMode_ ? "enabled" : "disabled"));
 
@@ -191,6 +192,8 @@ void SeedCaseTrackingNode::startTracking()
             if (sprouterTriggerReceived_) {
                 std::string filename = buildFilename(sprouterTriggerTimestamp_);
                 camera_->saveImage(frame, filename);
+    		RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        		 "Saving %s", filename.c_str());
             }
         } else if (mode_ == Mode::OnlineTracking) {
             // ToDo: run tracking here
@@ -215,7 +218,7 @@ void SeedCaseTrackingNode::startTracking()
             double elapsed = std::chrono::duration<double>(now - trackingStartTime).count();
             if (elapsed >= 1.0) {
                 double fps = static_cast<double>(fpsCount) / elapsed;
-                RCLCPP_INFO(this->get_logger(), "Processing FPS: %.2f", fps);
+                RCLCPP_INFO(this->get_logger(), "Processing FPS: %.2f frame counts: %d", fps, fpsCount);
                 fpsCount = 0;
                 trackingStartTime = now;
             }
@@ -296,7 +299,7 @@ void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::Spro
         "Sprouter released: seed_count=%d", msg->seed_count);
     RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-    sprouterTriggerReceived_ = false;
+    //sprouterTriggerReceived_ = false;
     cougarSaved_ = false;
 }
 
@@ -304,7 +307,7 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
 {
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
         "Sprouter debug value: name=%s value=%d", msg->name.c_str(), msg->value_int);
-    if (msg->name == "SprTrigSg" && msg->value_int == 1) {
+    if (msg->name == "SprTrigSgl" && msg->value_int == 1) {
         std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
         sprouterTriggerReceived_ = true;
         sprouterTriggerTimestamp_ = msg->header.stamp;
