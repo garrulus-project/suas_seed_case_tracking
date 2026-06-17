@@ -82,9 +82,11 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     sprouterDebugValueSub_ = this->create_subscription<mavros_msgs::msg::DebugValue>(
         sprouter_debug_value_topic, 10,
         std::bind(&SeedCaseTrackingNode::sprouterDebugValueCallback, this, std::placeholders::_1));
+    
+    this->declare_parameter<bool>("flush_queue_on_trigger", false);
+    flushQueueOnTrigger_ = this->get_parameter("flush_queue_on_trigger").as_bool();
 
     RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized....");
-
     
     // this->declare_parameter<bool>("debug", false);
     debugMode_ = this->get_parameter("debug").as_bool();
@@ -198,17 +200,18 @@ void SeedCaseTrackingNode::startTracking()
     sensor_msgs::msg::Image frame;
     int fpsCount = 0;
     auto trackingStartTime = std::chrono::steady_clock::now();
+    RCLCPP_INFO(this->get_logger(), "Tracking thread started. Waiting for triggered frames...");
 
     while (processing_.load() && rclcpp::ok())
     {
         if (!camera_->tryGrabFrame(frame, 5000)) {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+            RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                 "tryGrabFrame timeout, retrying...");
             continue;
         }
 
         bool bgr_converted = false;
-        baslerTriggerCounter_++;
+        // baslerTriggerCounter_++;
 
         if (mode_ == Mode::DataCollection) {
             std::unique_lock<std::mutex> lock(sprouterTriggerMutex_);
@@ -332,7 +335,7 @@ void SeedCaseTrackingNode::sprouterReleasedCallback(const mavros_msgs::msg::Spro
     RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter released event received, seed count: " << msg->seed_count);
     std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
     //sprouterTriggerReceived_ = false;
-    cougarSaved_ = false;
+    // cougarSaved_ = false;
 }
 
 void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::DebugValue::SharedPtr msg)
@@ -345,8 +348,14 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
             sprouterTriggerReceived_ = true;
             sprouterTriggerTimestamp_ = msg->header.stamp;
             triggerReceivedTime_ = std::chrono::steady_clock::now();
+            cougarSaved_ = false;
+            frameCounter_ = 0; // reset frame counter for filename
         }
-        flushSaveQueue(msg->header.stamp);
+        if (flushQueueOnTrigger_) {
+            flushSaveQueue(msg->header.stamp);
+            RCLCPP_DEBUG_THROTTLE(this->get_logger(),  *this->get_clock(), 1000,
+                "Flushing frames from queue...");
+        }
         RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter trigger received, timestamp: "
             << msg->header.stamp.sec << "." << msg->header.stamp.nanosec);
     }
