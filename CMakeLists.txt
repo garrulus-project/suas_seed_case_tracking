@@ -26,6 +26,7 @@ find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS imgcodecs)
 find_package(Pylon REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 set(DEPENDENCIES
     rclcpp
@@ -75,6 +76,7 @@ add_executable(seed_case_tracking_node
 target_link_libraries(seed_case_tracking_node
     basler_ace
     ${OpenCV_LIBS}
+    nlohmann_json::nlohmann_json
 )
 
 ament_target_dependencies(seed_case_tracking_node
