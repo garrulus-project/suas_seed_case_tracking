@@ -113,6 +113,7 @@ private:
     bool cougarSaved_ = false;
     builtin_interfaces::msg::Time sprouterTriggerTimestamp_;
     std::mutex sprouterTriggerMutex_;
+    bool flushQueueOnTrigger_ = false;
 
     // debug params
     bool debugMode_ = false;
