@@ -12,6 +12,9 @@
 #include <sstream>
 #include <thread>
 #include <string>
+#include <queue>
+#include <condition_variable>
+#include <chrono>
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -24,6 +27,12 @@
 #include <mavros_msgs/msg/sprouter_seed_released.hpp>
 #include <mavros_msgs/msg/sprouter_status.hpp>
 
+
+struct SaveRequest {
+    sensor_msgs::msg::Image image;
+    std::string filename;
+    builtin_interfaces::msg::Time triggerTimestamp;
+};
 
 class SeedCaseTrackingNode : public rclcpp::Node
 {
@@ -61,6 +70,20 @@ private:
 
     std::thread processingThread_;
     std::atomic<bool> processing_{false};
+
+    // Async save queue
+    std::queue<SaveRequest> saveQueue_;
+    std::mutex saveQueueMutex_;
+    std::condition_variable saveQueueCv_;
+    std::thread saveThread_;
+    std::atomic<bool> saving_{false};
+
+    // Time-windowed buffering
+    double saveWindowDuration_ = 1.0;
+    std::chrono::steady_clock::time_point triggerReceivedTime_;
+
+    void saveWorker();
+    void flushSaveQueue(const builtin_interfaces::msg::Time& newTriggerTimestamp);
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr imagePub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr baslerTriggerCounterPub_;

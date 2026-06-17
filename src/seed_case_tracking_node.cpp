@@ -30,9 +30,11 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
     this->declare_parameter<std::string>("output_folder", "");
     this->declare_parameter<std::string>("save_image_prefix", "frame");
     this->declare_parameter<std::string>("cougar_image_prefix", "cougar");
+    this->declare_parameter<double>("save_window_duration", 1.0);
     outputFolder_ = this->get_parameter("output_folder").as_string();
     saveImagePrefix_ = this->get_parameter("save_image_prefix").as_string();
     cougarImagePrefix_ = this->get_parameter("cougar_image_prefix").as_string();
+    saveWindowDuration_ = this->get_parameter("save_window_duration").as_double();
 
     // publishers
     imagePub_ = this->create_publisher<sensor_msgs::msg::Image>("image_raw", 100);
@@ -95,6 +97,8 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
         // Start processing immediately if event trigger is disabled
         camera_->startGrab();
         processing_ = true;
+        saving_ = true;
+        saveThread_ = std::thread(&SeedCaseTrackingNode::saveWorker, this);
         processingThread_ = std::thread(&SeedCaseTrackingNode::startTracking, this);
         RCLCPP_INFO(this->get_logger(), "Event trigger disabled, started tracking immediately...");
     } else {
@@ -119,6 +123,8 @@ void SeedCaseTrackingNode::eventInCallback(const std_msgs::msg::String::SharedPt
     {
         camera_->startGrab();
         processing_ = true;
+        saving_ = true;
+        saveThread_ = std::thread(&SeedCaseTrackingNode::saveWorker, this);
         processingThread_ = std::thread(&SeedCaseTrackingNode::startTracking, this);
         RCLCPP_INFO(this->get_logger(), "Processing started.");
         event_out_msg.data = "e_started";
@@ -139,6 +145,23 @@ void SeedCaseTrackingNode::stopProcessing()
     if (processingThread_.joinable()) {
         processingThread_.join();
     }
+
+    // Stop the save worker
+    saving_ = false;
+    saveQueueCv_.notify_one();
+    if (saveThread_.joinable()) {
+        saveThread_.join();
+    }
+    // Drain remaining
+    {
+        std::lock_guard<std::mutex> lock(saveQueueMutex_);
+        while (!saveQueue_.empty()) {
+            auto req = std::move(saveQueue_.front());
+            saveQueue_.pop();
+            camera_->saveImage(req.image, req.filename);
+        }
+    }
+
     camera_->stopGrab();
 }
 
@@ -188,12 +211,21 @@ void SeedCaseTrackingNode::startTracking()
         baslerTriggerCounter_++;
 
         if (mode_ == Mode::DataCollection) {
-            std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+            std::unique_lock<std::mutex> lock(sprouterTriggerMutex_);
             if (sprouterTriggerReceived_) {
-                std::string filename = buildFilename(sprouterTriggerTimestamp_);
-                camera_->saveImage(frame, filename);
-    		RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-        		 "Saving %s", filename.c_str());
+                auto elapsed = std::chrono::steady_clock::now() - triggerReceivedTime_;
+                if (std::chrono::duration<double>(elapsed).count() < saveWindowDuration_) {
+                    std::string filename = buildFilename(sprouterTriggerTimestamp_);
+                    auto currentTriggerTs = sprouterTriggerTimestamp_;
+                    lock.unlock();
+                    {
+                        std::lock_guard<std::mutex> qLock(saveQueueMutex_);
+                        saveQueue_.push({frame, std::move(filename), currentTriggerTs});
+                    }
+                    saveQueueCv_.notify_one();
+                    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                        "Enqueued frame for saving");
+                }
             }
         } else if (mode_ == Mode::OnlineTracking) {
             // ToDo: run tracking here
@@ -308,11 +340,60 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
     RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
         "Sprouter debug value: name=%s value=%d", msg->name.c_str(), msg->value_int);
     if (msg->name == "SprTrigSgl" && msg->value_int == 1) {
-        std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
-        sprouterTriggerReceived_ = true;
-        sprouterTriggerTimestamp_ = msg->header.stamp;
+        {
+            std::lock_guard<std::mutex> lock(sprouterTriggerMutex_);
+            sprouterTriggerReceived_ = true;
+            sprouterTriggerTimestamp_ = msg->header.stamp;
+            triggerReceivedTime_ = std::chrono::steady_clock::now();
+        }
+        flushSaveQueue(msg->header.stamp);
         RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter trigger received, timestamp: "
-            << sprouterTriggerTimestamp_.sec << "." << sprouterTriggerTimestamp_.nanosec);
+            << msg->header.stamp.sec << "." << msg->header.stamp.nanosec);
+    }
+}
+
+void SeedCaseTrackingNode::saveWorker()
+{
+    while (true) {
+        SaveRequest req;
+        {
+            std::unique_lock<std::mutex> lock(saveQueueMutex_);
+            saveQueueCv_.wait(lock, [this] {
+                return !saveQueue_.empty() || !saving_.load();
+            });
+            if (saveQueue_.empty() && !saving_.load()) {
+                break;
+            }
+            if (saveQueue_.empty()) {
+                continue;
+            }
+            req = std::move(saveQueue_.front());
+            saveQueue_.pop();
+        }
+        camera_->saveImage(req.image, req.filename);
+    }
+}
+
+void SeedCaseTrackingNode::flushSaveQueue(
+    const builtin_interfaces::msg::Time& newTriggerTimestamp)
+{
+    std::lock_guard<std::mutex> lock(saveQueueMutex_);
+    size_t discarded = 0;
+    std::queue<SaveRequest> keep;
+    while (!saveQueue_.empty()) {
+        auto& front = saveQueue_.front();
+        if (front.triggerTimestamp.sec == newTriggerTimestamp.sec &&
+            front.triggerTimestamp.nanosec == newTriggerTimestamp.nanosec) {
+            keep.push(std::move(front));
+        } else {
+            discarded++;
+        }
+        saveQueue_.pop();
+    }
+    saveQueue_ = std::move(keep);
+    if (discarded > 0) {
+        RCLCPP_WARN(this->get_logger(),
+            "Flushed %zu stale frames from save queue on new trigger", discarded);
     }
 }
 
