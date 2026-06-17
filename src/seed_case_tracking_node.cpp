@@ -346,9 +346,12 @@ void SeedCaseTrackingNode::sprouterDebugValueCallback(const mavros_msgs::msg::De
             sprouterTriggerTimestamp_ = msg->header.stamp;
             triggerReceivedTime_ = std::chrono::steady_clock::now();
         }
-        flushSaveQueue(msg->header.stamp);
+	// do not flush old frames even when new trigger arrives
+        // flushSaveQueue(msg->header.stamp);
         RCLCPP_INFO_STREAM(this->get_logger(), "Sprouter trigger received, timestamp: "
             << msg->header.stamp.sec << "." << msg->header.stamp.nanosec);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Remaining unsaved images in the queue: "
+            << saveQueue_.size());
     }
 }
 
