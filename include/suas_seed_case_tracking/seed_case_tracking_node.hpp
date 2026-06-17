@@ -90,6 +90,9 @@ private:
     bool cougarSaved_ = false;
     builtin_interfaces::msg::Time sprouterTriggerTimestamp_;
     std::mutex sprouterTriggerMutex_;
+
+    // debug params
+    bool debugMode_ = false;
 };
 
 #endif // SUAS_SEED_CASE_TRACKING__SEED_CASE_TRACKING_NODE_HPP_

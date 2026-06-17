@@ -83,6 +83,10 @@ SeedCaseTrackingNode::SeedCaseTrackingNode(const rclcpp::NodeOptions& options)
 
     RCLCPP_INFO(this->get_logger(), "SeedCaseTrackingNode initialized....");
 
+    this->declare_parameter<bool>("debug", false);
+    debugMode_ = this->get_parameter("debug").as_bool();
+    RCLCPP_INFO_STREAM(this->get_logger(), "Debug mode: " << (debugMode_ ? "enabled" : "disabled"));
+
     this->declare_parameter<bool>("event_trigger", false);
     eventTrigger_ = this->get_parameter("event_trigger").as_bool();
     RCLCPP_INFO_STREAM(this->get_logger(), "Event trigger: " << (eventTrigger_ ? "enabled" : "disabled"));
@@ -169,7 +173,7 @@ void SeedCaseTrackingNode::startTracking()
 {
     sensor_msgs::msg::Image frame;
     int fpsCount = 0;
-    auto lastFpsTime = std::chrono::steady_clock::now();
+    auto trackingStartTime = std::chrono::steady_clock::now();
 
     while (processing_.load() && rclcpp::ok())
     {
@@ -204,14 +208,17 @@ void SeedCaseTrackingNode::startTracking()
         // }
 
         // FPS logging: (todo: run this on debug mode only)
-        fpsCount++;
-        auto now = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration<double>(now - lastFpsTime).count();
-        if (elapsed >= 1.0) {
-            double fps = static_cast<double>(fpsCount) / elapsed;
-            RCLCPP_INFO(this->get_logger(), "Processing FPS: %.2f", fps);
-            fpsCount = 0;
-            lastFpsTime = now;
+        if (debugMode_)
+        {
+            fpsCount++;
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = std::chrono::duration<double>(now - trackingStartTime).count();
+            if (elapsed >= 1.0) {
+                double fps = static_cast<double>(fpsCount) / elapsed;
+                RCLCPP_INFO(this->get_logger(), "Processing FPS: %.2f", fps);
+                fpsCount = 0;
+                trackingStartTime = now;
+            }
         }
     }
 }
