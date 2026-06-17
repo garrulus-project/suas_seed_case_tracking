@@ -270,9 +270,9 @@ std::string SeedCaseTrackingNode::buildFilename(const builtin_interfaces::msg::T
     localtime_r(&sec, &tm_time);
 
     ss << outputFolder_ << "/" << saveImagePrefix_ << "_"
-       << frameCounter_++ << "_"
        << std::put_time(&tm_time, "%Y%m%d_%H%M%S")
-       << "_" << std::setfill('0') << std::setw(9) << stamp.nanosec
+       << "_" << std::setfill('0') << std::setw(9) << stamp.nanosec << "_"
+       << frameCounter_++
        << ".png";
    return ss.str();
 }
