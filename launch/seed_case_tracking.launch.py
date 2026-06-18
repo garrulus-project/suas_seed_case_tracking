@@ -34,6 +34,8 @@ def generate_launch_description():
                               description='Sprouter seed released topic'),
         DeclareLaunchArgument('sprouter_debug_value_topic', default_value='/mavros/debug_value/named_value_int',
                               description='Sprouter debug value topic'),
+        DeclareLaunchArgument('output_folder', default_value='/home/uas/ws/images',
+                              description='Directory where captured images are saved'),
         Node(
             package='suas_seed_case_tracking',
             executable='seed_case_tracking_node',
@@ -52,7 +54,9 @@ def generate_launch_description():
                     'sprouter_status_topic': LaunchConfiguration('sprouter_status_topic'),
                     'sprouter_released_topic': LaunchConfiguration('sprouter_released_topic'),
                     'sprouter_debug_value_topic': LaunchConfiguration('sprouter_debug_value_topic'),
+                    'output_folder': LaunchConfiguration('output_folder'),
                 },
             ],
+            # arguments=['--ros-args', '--log-level', 'debug']
         ),
     ])
